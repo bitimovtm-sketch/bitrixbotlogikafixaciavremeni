@@ -18,13 +18,17 @@ BITRIX_WEBHOOK = "https://b24-wbfxcu.bitrix24.ru/rest/1/fmt5penbkzjldb2l"
 BUSINESS_PROCESS_ID = 22
 DATA_FILE = "deals.json"
 
+# Битрикс ID пользователей
+MY_BITRIX_ID = 1       # "С кого списать" — ты
+EXECUTOR_BITRIX_ID = 1 # "Кому начислить" — пока тоже 1
+
 # ─── STATES ───────────────────────────────────────────────────────────────────
 (
     MAIN_MENU,
     ADD_DEAL_ID, ADD_DEAL_NAME,
     DELETE_DEAL_SELECT,
-    TIME_SELECT_DEAL, TIME_EXECUTOR_MINUTES, TIME_SELECT_EXECUTOR, TIME_MY_MINUTES,
-) = range(8)
+    TIME_SELECT_DEAL, TIME_EXECUTOR_MINUTES, TIME_WHAT_DID, TIME_SELECT_EXECUTOR, TIME_MY_MINUTES,
+) = range(9)
 
 EXECUTORS = ["Сергей", "Лера"]
 
@@ -40,17 +44,17 @@ def save_deals(deals):
         json.dump(deals, f, ensure_ascii=False, indent=2)
 
 # ─── BITRIX ───────────────────────────────────────────────────────────────────
-def run_bitrix_process(deal_id, deal_name, executor_name, executor_minutes, my_minutes):
+def run_bitrix_process(deal_id, executor_minutes, what_did, executor_bitrix_id, my_minutes):
     url = f"{BITRIX_WEBHOOK}/bizproc.workflow.start.json"
     payload = {
         "TEMPLATE_ID": BUSINESS_PROCESS_ID,
         "DOCUMENT_ID": ["crm", "CCrmDocumentDeal", f"DEAL_{deal_id}"],
         "PARAMETERS": {
-            "DealId": deal_id,
-            "DealName": deal_name,
-            "ExecutorName": executor_name,
-            "ExecutorMinutes": executor_minutes,
-            "MyMinutes": my_minutes,
+            "Parameter1": executor_minutes,      # Сколько мин потратил исполнитель
+            "Parameter2": what_did,              # Что делал
+            "Parameter3": MY_BITRIX_ID,          # С кого списать (ты)
+            "Parameter4": executor_bitrix_id,    # Кому начислить (исполнитель)
+            "Parameter5": my_minutes,            # Сколько мин потратил ответственный
         }
     }
     try:
@@ -185,6 +189,12 @@ async def time_executor_minutes(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❗ Введи число минут:")
         return TIME_EXECUTOR_MINUTES
     context.user_data["executor_minutes"] = int(raw)
+    await update.message.reply_text("Что делал исполнитель? (опиши кратко):")
+    return TIME_WHAT_DID
+
+async def time_what_did(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await guard(update): return ConversationHandler.END
+    context.user_data["what_did"] = update.message.text.strip()
     await update.message.reply_text("Выбери исполнителя:", reply_markup=executors_inline_keyboard())
     return TIME_SELECT_EXECUTOR
 
@@ -210,16 +220,18 @@ async def time_my_minutes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     deal_name = ud["time_deal_name"]
     executor_name = ud["executor_name"]
     executor_minutes = ud["executor_minutes"]
+    what_did = ud["what_did"]
 
     await update.message.reply_text("⏳ Отправляю в Битрикс...")
 
-    success = run_bitrix_process(deal_id, deal_name, executor_name, executor_minutes, my_minutes)
+    success = run_bitrix_process(deal_id, executor_minutes, what_did, EXECUTOR_BITRIX_ID, my_minutes)
 
     if success:
         msg = (
             f"✅ Бизнес-процесс запущен!\n\n"
             f"📋 Сделка: #{deal_id} «{deal_name}»\n"
             f"👤 Исполнитель: {executor_name} — {executor_minutes} мин\n"
+            f"📝 Что делал: {what_did}\n"
             f"🙋 Я — {my_minutes} мин"
         )
     else:
@@ -228,6 +240,7 @@ async def time_my_minutes(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Проверь ID процесса и права вебхука.\n\n"
             f"📋 Сделка: #{deal_id} «{deal_name}»\n"
             f"👤 Исполнитель: {executor_name} — {executor_minutes} мин\n"
+            f"📝 Что делал: {what_did}\n"
             f"🙋 Я — {my_minutes} мин"
         )
 
@@ -252,6 +265,7 @@ def main():
             DELETE_DEAL_SELECT: [CallbackQueryHandler(delete_deal_select, pattern=r"^delete_deal:")],
             TIME_SELECT_DEAL: [CallbackQueryHandler(time_select_deal, pattern=r"^time_deal:")],
             TIME_EXECUTOR_MINUTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, time_executor_minutes)],
+            TIME_WHAT_DID: [MessageHandler(filters.TEXT & ~filters.COMMAND, time_what_did)],
             TIME_SELECT_EXECUTOR: [CallbackQueryHandler(time_select_executor, pattern=r"^executor:")],
             TIME_MY_MINUTES: [MessageHandler(filters.TEXT & ~filters.COMMAND, time_my_minutes)],
         },
