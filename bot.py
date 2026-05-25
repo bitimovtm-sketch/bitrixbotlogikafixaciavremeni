@@ -14,13 +14,17 @@ logger = logging.getLogger(__name__)
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 ALLOWED_USER_ID = 112201829
-BITRIX_WEBHOOK = "https://b24-wbfxcu.bitrix24.ru/rest/1/fmt5penbkzjldb2l"
-BUSINESS_PROCESS_ID = 22
+BITRIX_WEBHOOK = "https://logika25.bitrix24.ru/rest/5/fzrqlqrqdjtogj5i"
+BUSINESS_PROCESS_ID = 446
 DATA_FILE = "deals.json"
 
-# Битрикс ID пользователей
-MY_BITRIX_ID = 1       # "С кого списать" — ты
-EXECUTOR_BITRIX_ID = 1 # "Кому начислить" — пока тоже 1
+# Битрикс ID исполнителей
+EXECUTOR_IDS = {
+    "Сергей": 1978,
+    "Лера": 1770,
+}
+
+EXECUTORS = ["Сергей", "Лера"]
 
 # ─── STATES ───────────────────────────────────────────────────────────────────
 (
@@ -29,8 +33,6 @@ EXECUTOR_BITRIX_ID = 1 # "Кому начислить" — пока тоже 1
     DELETE_DEAL_SELECT,
     TIME_SELECT_DEAL, TIME_EXECUTOR_MINUTES, TIME_WHAT_DID, TIME_SELECT_EXECUTOR, TIME_MY_MINUTES,
 ) = range(9)
-
-EXECUTORS = ["Сергей", "Лера"]
 
 # ─── DATA HELPERS ─────────────────────────────────────────────────────────────
 def load_deals():
@@ -50,11 +52,11 @@ def run_bitrix_process(deal_id, executor_minutes, what_did, executor_bitrix_id, 
         "TEMPLATE_ID": BUSINESS_PROCESS_ID,
         "DOCUMENT_ID": ["crm", "CCrmDocumentDeal", f"DEAL_{deal_id}"],
         "PARAMETERS": {
-            "Parameter1": executor_minutes,      # Сколько мин потратил исполнитель
-            "Parameter2": what_did,              # Что делал
-            "Parameter3": MY_BITRIX_ID,          # С кого списать (ты)
-            "Parameter4": executor_bitrix_id,    # Кому начислить (исполнитель)
-            "Parameter5": my_minutes,            # Сколько мин потратил ответственный
+            "Parameter1": executor_minutes,   # Сколько минут потратил исполнитель
+            "Parameter2": what_did,           # Что делал
+            "Parameter5": 372,                # Фиксированное число
+            "Parameter3": executor_bitrix_id, # ID исполнителя: 1978 (Сергей) или 1770 (Лера)
+            "Parameter4": my_minutes,         # Сколько потратил я
         }
     }
     try:
@@ -204,6 +206,7 @@ async def time_select_executor(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     executor = query.data.split(":")[1]
     context.user_data["executor_name"] = executor
+    context.user_data["executor_bitrix_id"] = EXECUTOR_IDS[executor]
     await query.edit_message_text(f"Исполнитель: {executor}\n\nСколько минут потратил я?")
     return TIME_MY_MINUTES
 
@@ -221,10 +224,11 @@ async def time_my_minutes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     executor_name = ud["executor_name"]
     executor_minutes = ud["executor_minutes"]
     what_did = ud["what_did"]
+    executor_bitrix_id = ud["executor_bitrix_id"]
 
     await update.message.reply_text("⏳ Отправляю в Битрикс...")
 
-    success = run_bitrix_process(deal_id, executor_minutes, what_did, EXECUTOR_BITRIX_ID, my_minutes)
+    success = run_bitrix_process(deal_id, executor_minutes, what_did, executor_bitrix_id, my_minutes)
 
     if success:
         msg = (
