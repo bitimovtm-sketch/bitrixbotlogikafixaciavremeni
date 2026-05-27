@@ -47,6 +47,16 @@ def save_deals(deals):
         json.dump(deals, f, ensure_ascii=False, indent=2)
 
 # ─── BITRIX ───────────────────────────────────────────────────────────────────
+def get_deal_stage(deal_id):
+    url = f"{BITRIX_WEBHOOK}/crm.deal.get.json"
+    try:
+        resp = requests.post(url, json={"id": deal_id}, timeout=10)
+        data = resp.json()
+        return data.get("result", {}).get("STAGE_ID", "")
+    except Exception as e:
+        logger.error(f"Bitrix get deal error: {e}")
+        return ""
+
 def run_bitrix_process(deal_id, executor_minutes, what_did, executor_bitrix_id, my_minutes):
     url = f"{BITRIX_WEBHOOK}/bizproc.workflow.start.json"
     payload = {
@@ -180,6 +190,13 @@ async def time_select_deal(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     deal_id = query.data.split(":")[1]
     deals = load_deals()
+
+    stage = get_deal_stage(deal_id)
+    if stage in ("PROPOSAL", "WON", "LOSE"):
+        await query.edit_message_text("❌ Эта сделка завершена! Добавь актуальную сделку и удали эту.")
+        await context.bot.send_message(query.from_user.id, "Выбери действие:", reply_markup=main_menu_keyboard())
+        return MAIN_MENU
+
     context.user_data["time_deal_id"] = deal_id
     context.user_data["time_deal_name"] = deals.get(deal_id, "")
     await query.edit_message_text(f"Сделка: #{deal_id} «{deals.get(deal_id)}»\n\nСколько минут потратил исполнитель?")
