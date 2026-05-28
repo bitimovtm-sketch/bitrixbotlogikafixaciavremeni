@@ -16,7 +16,7 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 ALLOWED_USER_ID = 112201829
 BITRIX_WEBHOOK = "https://logika25.bitrix24.ru/rest/5/fzrqlqrqdjtogj5i"
 BUSINESS_PROCESS_ID = 446
-DATA_FILE = "deals.json"
+DATA_FILE = "/data/deals.json"
 
 # Битрикс ID исполнителей
 EXECUTOR_IDS = {
